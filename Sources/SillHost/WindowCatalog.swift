@@ -230,9 +230,8 @@ final class WindowCatalog {
         refreshSeq += 1
         let seq = refreshSeq
         guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else { return }
-        // The staged window, if the on-screen list dropped it: one extra SCShareableContent call per
-        // poll, and only then. Fetched before the sequence check so its await cannot let an older
-        // refresh overwrite a newer one.
+        // The staged window may be absent from ScreenCaptureKit's on-screen list after moving to
+        // the virtual display. Preserve the existing explicit pin lookup for that case.
         var pinned: SCWindow? = nil
         if let id = stagedWindowID, !content.windows.contains(where: { $0.windowID == id }),
            let all = await Self.shareableContent(excludingDesktopWindows: false, onScreenWindowsOnly: false, timeout: 3) {
@@ -248,7 +247,10 @@ final class WindowCatalog {
         var visible = content.windows.filter { w in
             guard let app = w.owningApplication, !app.applicationName.isEmpty else { return false }
             return w.windowLayer == 0                                  // drops widgets, wallpaper, backstop
-                && w.frame.width > 100 && w.frame.height > 100
+                // Cursor has many empty 64×64 helper windows in ScreenCaptureKit's list. Keep
+                // ordinary small document windows (including its 128×100 window) while excluding
+                // those icon-sized helpers.
+                && w.frame.width > 100 && w.frame.height >= 100
                 && app.processID != Self.ownPID
                 && !Self.isSystemHelperWindow(w)
         }
